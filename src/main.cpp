@@ -1,7 +1,6 @@
-#include <iostream>
-using namespace std;
+#include "App.hpp"
 
 int main() {
-    cout << "halo\n";
-    return 0;
+    StationApp app;
+    app.run();
 }

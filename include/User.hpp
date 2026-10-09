@@ -5,6 +5,7 @@ class User {
 private:
     std::string name;
     double balance;
+    
 public:
     // constructor
     User(std::string name, double intitialBalance);
