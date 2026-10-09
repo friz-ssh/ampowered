@@ -1,97 +1,44 @@
 #include "App.hpp"
-#include "User.hpp"
-#include "Vehicle.hpp"
-#include "ChargingPort.hpp"
 #include "ChargingSession.hpp"
+#include "TuiStyle.hpp"
+#include "Vehicle.hpp"
 
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
 
-#include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <cmath>
-#include <memory>
 #include <string>
 #include <thread>
-#include <vector>
 
 namespace {
 
-using namespace ftxui;
-
-constexpr int kWidth = 76;  // lebar border terluar
-
-// badge = teks dengan blok warna di belakangnya
-Element badge(const std::string& s, Color bg) {
-    return text(" " + s + " ") | bold | color(Color::Black) | bgcolor(bg);
-}
-
-// merah (rendah), kuning (menengah), hijau (hampir penuh)
-Color batteryColor(double pct) {
-    if (pct < 30.0) return Color::Red;
-    if (pct < 70.0) return Color::Yellow;
-    return Color::Green;
-}
-
-// 12345 -> "Rp 12.345"
-std::string rupiah(double v) {
-    std::string s = std::to_string(static_cast<long long>(v));
-    for (int i = static_cast<int>(s.size()) - 3; i > 0; i -= 3) s.insert(i, ".");
-    return "Rp " + s;
-}
-
-// fixing charge speed decimal point to 1 digit
-std::string fixed1(double v) {
-    char buf[10];
-    std::snprintf(buf, sizeof(buf), "%.1f", v);
-    return buf;
-}
-
-// margin kiri-kanan 1 spasi di dalam border terluar
-Element pad(Element e) {
-    return hbox({text(" "), std::move(e) | flex, text(" ")});
-}
-
-Element cell(Element e, int w) { return std::move(e) | size(WIDTH, EQUAL, w); }
-
-// satu baris tabel port.
-Element tableRow(Element c1, Element c2, Element c3,
-                 Element c4, Element c5, Element c6) {
-    return hbox({
-        cell(std::move(c1), 6),
-        cell(std::move(c2), 13),
-        cell(std::move(c3), 14),
-        cell(std::move(c4), 23),
-        cell(std::move(c5), 5),
-        std::move(c6) | flex,
-    });
-}
+// kendaraan dan sesi yang sedang berjalan di satu port (null = port kosong)
+struct Slot {
+    std::unique_ptr<Vehicle> vehicle;
+    std::unique_ptr<ChargingSession> session;
+};
 
 }  // namespace
+
+StationApp::StationApp(User& user, std::vector<std::unique_ptr<ChargingPort>>& ports)
+    : user(user), ports(ports) {}
 
 void StationApp::run() {
     using namespace ftxui;
 
-    // objek domain (dibuat saat runtime)
-    User user("Fr", 100000.0);
-
-    std::vector<std::unique_ptr<ChargingPort>> ports;
-    ports.push_back(std::make_unique<DCFastPort>(1));
-    ports.push_back(std::make_unique<ACStandardPort>(2));
-
-    // satu slot per port. Null = port kosong.
-    std::vector<std::unique_ptr<Vehicle>> vehicles(ports.size());
-    std::vector<std::unique_ptr<ChargingSession>> sessions(ports.size());
+    std::vector<Slot> slots(ports.size());
 
     // state form
-    std::string plate, pctStr = "20", message;
+    std::string plate, pctStr = "20", topUpStr, message;
     std::vector<std::string> typeLabels = {"Car", "Motorcycle"};
-    std::vector<std::string> portLabels = {"Port 1 (DC)", "Port 2 (AC)"};
+    std::vector<std::string> portLabels;
+    for (const auto& p : ports)
+        portLabels.push_back("Port " + std::to_string(p->getID()) + " (" + p->getTypeName() + ")");
     int typeIdx = 0, portIdx = 0;
 
-    const double speedup = 60.0;  // 1 detik nyata = 1 menit simulasi
+    const double speedup = 60.0;  // 1 detik real life = 1 menit simulasi
     const auto start = std::chrono::steady_clock::now();
     auto last = start;
 
@@ -100,57 +47,61 @@ void StationApp::run() {
     // aksi
     auto startCharging = [&] {
         size_t p = static_cast<size_t>(portIdx);
-        if (sessions[p]) { message = "Port sedang dipakai."; return; }
+        if (slots[p].session) { message = "Port sedang dipakai."; return; }
         if (plate.empty()) { message = "Plat nomor masih kosong."; return; }
         double pct;
         try { pct = std::stod(pctStr); }
         catch (...) { message = "Persen baterai tidak valid."; return; }
-        pct = std::clamp(pct, 0.0, 100.0);
 
-        // hanya titik ini yang tahu tipe konkret kendaraan
-        std::unique_ptr<Vehicle> v;
-        if (typeIdx == 0) v = std::make_unique<Car>(plate, 50.0, 50.0 * pct / 100.0);
-        else              v = std::make_unique<Motorcycle>(plate, 4.0, 4.0 * pct / 100.0);
-
-        ports[p]->plugVehicle(v.get());
-        sessions[p] = std::make_unique<ChargingSession>(&user, ports[p].get());
-        vehicles[p] = std::move(v);
+        // hanya makeVehicle() yang tahu tipe konkret kendaraan. di sini cukup Vehicle
+        slots[p].vehicle = makeVehicle(typeIdx == 0, plate, pct);
+        ports[p]->plugVehicle(slots[p].vehicle.get());
+        slots[p].session = std::make_unique<ChargingSession>(&user, ports[p].get());
         message = "Mulai mengisi di Port " + std::to_string(ports[p]->getID()) + ".";
         plate.clear();
     };
 
     auto stopCharging = [&](size_t p) {
-        if (!sessions[p]) { message = "Port ini kosong."; return; }
-        double cost = sessions[p]->getCurrentCost();
-        bool paid = sessions[p]->stopSession();   // port dicabut di dalam
-        sessions[p].reset();
-        vehicles[p].reset();                      // bebaskan kendaraan setelah dicabut
-        message = paid ? "Lunas: " + rupiah(cost)
-                       : "Saldo tidak cukup untuk " + rupiah(cost);
+        if (!slots[p].session) { message = "Port ini kosong."; return; }
+        slots[p].session->stopSession();
+        message = "Lunas: " + tui::rupiah(slots[p].session->getCurrentCost());
+        slots[p].session.reset();
+        slots[p].vehicle.reset();     // bebaskan kendaraan setelah port dicabut
+    };
+
+    auto doTopUp = [&] {
+        if (topUpStr.empty()) { message = "Isi nominal top up dulu."; return; }
+        double amount = std::stod(topUpStr);   // filter hanya meloloskan digit
+        if (amount <= 0) { message = "Nominal top up harus lebih dari 0."; return; }
+        user.topUp(amount);
+        message = "Top up " + tui::rupiah(amount) + " berhasil.";
+        topUpStr.clear();
     };
 
     // komponen input
     auto plateInput = Input(&plate, "AB 1234 CD");
-    auto pctInput   = Input(&pctStr, "0-100") | CatchEvent([&](Event e) {
-    if (e.is_character()) {
-        const std::string& ch = e.character();
-        bool isDigit = ch.size() == 1 && ch[0] >= '0' && ch[0] <= '9';
-        bool isDot = ch == "." && pctStr.find('.') == std::string::npos;
-        if (!isDigit && !isDot) return true;
-        if (pctStr.size() >= 6) return true;  // maksimal 6 digit
-    }
-    return false;  // tombol lain (panah, backspace, tab, dll) lanjut seperti biasa
-    });
-    auto typeToggle = Toggle(&typeLabels, &typeIdx);
-    auto portToggle = Toggle(&portLabels, &portIdx);
-    auto btnStart = Button("Mulai",   startCharging);
-    auto btnStop1 = Button("Stop P1", [&] { stopCharging(0); });
-    auto btnStop2 = Button("Stop P2", [&] { stopCharging(1); });
-    auto btnQuit  = Button("Keluar",  screen.ExitLoopClosure());
+    auto pctInput   = tui::lineInput(&pctStr, "0-100") | tui::numericFilter(&pctStr, 6, true);
+    auto topUpInput = tui::lineInput(&topUpStr, "50000", doTopUp)
+                      |tui::numericFilter(&topUpStr, 7, false);
+    auto typeToggle = tui::toggle(&typeLabels, &typeIdx);
+    auto portToggle = tui::toggle(&portLabels, &portIdx);
+
+    auto btnTopUp = Button("Top Up", doTopUp, ButtonOption::Ascii());
+    auto btnStart = Button("Mulai", startCharging);
+    auto btnQuit  = Button("Keluar", screen.ExitLoopClosure());
+    std::vector<Component> stopButtons;
+    for (size_t i = 0; i < ports.size(); ++i)
+        stopButtons.push_back(Button("Stop P" + std::to_string(ports[i]->getID()),
+                                     [&, i] { stopCharging(i); }));
+
+    auto navRow = Container::Horizontal({btnStart});
+    for (auto& b : stopButtons) navRow->Add(b);
+    navRow->Add(btnQuit);
 
     auto controls = Container::Vertical({
-        plateInput, pctInput, typeToggle, portToggle,
-        Container::Horizontal({btnStart, btnStop1, btnStop2, btnQuit}),
+        plateInput, typeToggle, pctInput, portToggle,
+        Container::Horizontal({topUpInput, btnTopUp}),
+        navRow,
     });
 
     // render
@@ -160,14 +111,16 @@ void StationApp::run() {
         double elapsed = std::chrono::duration<double>(now - start).count();
         last = now;
 
-        for (size_t i = 0; i < sessions.size(); ++i) {
-            if (!sessions[i]) continue;
-            sessions[i]->simulateTime(dt * speedup / 3600.0);
-            if (!sessions[i]->isActive()) {   // berhenti otomatis karena saldo habis
+        // waktu maju: logika hanya tahu "jam", chrono hanya ada di sini
+        for (size_t i = 0; i < slots.size(); ++i) {
+            if (!slots[i].session) continue;
+            slots[i].session->simulateTime(dt * speedup / 3600.0);
+            if (!slots[i].session->isActive()) {      // selesai sendiri: saldo habis
                 message = "Saldo habis. Port " + std::to_string(ports[i]->getID())
-                + " dihentikan, dibayar " + rupiah(sessions[i]->getCurrentCost());
-                sessions[i].reset();
-                vehicles[i].reset();
+                        + " dihentikan, dibayar "
+                        + tui::rupiah(slots[i].session->getCurrentCost());
+                slots[i].session.reset();
+                slots[i].vehicle.reset();
             }
         }
 
@@ -183,79 +136,82 @@ void StationApp::run() {
             : "Launching app" + std::string(1 + static_cast<int>(elapsed * 2) % 3, '.');
 
         auto title = vbox({
-            hbox({badge("Ampowered", Color::Cyan), text(" EV Charging Station") | bold}),
+            hbox({tui::badge("Ampowered", Color::Cyan), text(" EV Charging Station") | bold}),
             text(status) | dim,
         }) | vcenter;
 
-        auto header = pad(hbox({mascot, text("  "), title}));
+        auto header = tui::pad(hbox({mascot, text("  "), title}));
 
         if (!ready) {
-            return vbox({header}) | borderRounded | size(WIDTH, EQUAL, kWidth);
+            return vbox({header}) | borderRounded | size(WIDTH, EQUAL, tui::kWidth);
         }
 
         // --- tabel port ---
         Elements portRows;
-        portRows.push_back(tableRow(
+        portRows.push_back(tui::tableRow(
             text("Port") | bold, text("Tipe") | bold, text("Kendaraan") | bold,
             text("Baterai") | bold, text("kW") | bold, text("Biaya") | bold));
         portRows.push_back(separatorLight());
 
         for (size_t i = 0; i < ports.size(); ++i) {
-            const Vehicle* v = ports[i]->getVehicle();   // polymorphism lewat Vehicle*
-            if (v && sessions[i]) {
+            const Vehicle* v = ports[i]->getVehicle();   // lewat pointer induk
+            if (v && slots[i].session) {
                 double pct = v->getBatteryPercentage();
-                portRows.push_back(tableRow(
+                portRows.push_back(tui::tableRow(
                     text(std::to_string(ports[i]->getID())),
                     text(ports[i]->getTypeName()),
                     text(v->getPlate()),
-                    hbox({gauge(pct / 100.0) | color(batteryColor(pct)) | flex,
+                    hbox({gauge(pct / 100.0) | color(tui::batteryColor(pct)) | flex,
                           text(" " + std::to_string(static_cast<int>(pct)) + "%")
-                              | size(WIDTH, EQUAL, 6)}),
-                    text(fixed1(v->calcChargeSpeed())),
-                    text(rupiah(sessions[i]->getCurrentCost()))));
+                              | size(WIDTH, EQUAL, 5)}),
+                    text(tui::fixed1(v->calcChargeSpeed())),
+                    text(tui::rupiah(slots[i].session->getCurrentCost()))));
             } else {
-                portRows.push_back(tableRow(
+                portRows.push_back(tui::tableRow(
                     text(std::to_string(ports[i]->getID())),
                     text(ports[i]->getTypeName()),
-                    badge("KOSONG", Color::GrayLight),
+                    tui::cellBadge("KOSONG", Color::GrayLight),
                     text("-"), text("-"), text("-")));
             }
         }
         portRows.push_back(text(""));
         portRows.push_back(hbox({text("Saldo: "),
-                                 badge(rupiah(user.getBalance()), Color::Green)}));
-        auto portSection = pad(vbox(std::move(portRows)));
+                                 tui::badge(tui::rupiah(user.getBalance()), Color::Green)}));
+        auto portSection = tui::pad(vbox(std::move(portRows)));
 
-        // --- form isi kendaraan ---
-        auto formSection = pad(vbox({
+        // --- Section 3: form isi kendaraan ---
+        auto formSection = tui::pad(vbox({
             text("Isi kendaraan") | bold,
             hbox({text("Plat    : "), plateInput->Render() | size(WIDTH, EQUAL, 16)}),
             hbox({text("Tipe    : "), typeToggle->Render()}),
-            hbox({text("Baterai : "), pctInput->Render() | size(WIDTH, EQUAL, 6),
+            hbox({text("Baterai : "), pctInput->Render() | size(WIDTH, EQUAL, 8),
                   text(" %")}),
             hbox({text("Port    : "), portToggle->Render()}),
+            hbox({text("Top up  : "), topUpInput->Render() | size(WIDTH, EQUAL, 10),
+                  text(" "), btnTopUp->Render()}),
         }));
 
-        // --- navigasi + pesan ---
-        auto navSection = pad(vbox({
-            hbox({btnStart->Render(), text(" "), btnStop1->Render(), text(" "),
-                  btnStop2->Render(), text(" "), btnQuit->Render()}),
+        // --- Section 4: navigasi + pesan ---
+        Elements nav;
+        nav.push_back(btnStart->Render());
+        for (auto& b : stopButtons) { nav.push_back(text(" ")); nav.push_back(b->Render()); }
+        nav.push_back(text(" "));
+        nav.push_back(btnQuit->Render());
+        auto navSection = tui::pad(vbox({
+            hbox(std::move(nav)),
             text(message) | color(Color::Yellow),
         }));
 
-        // border terluar
+        // Satu border terluar; antar section hanya garis pemisah selebar border
         return vbox({
-            header,
-            separator(),
-            portSection,
-            separator(),
-            formSection,
-            separator(),
+            header, separator(),
+            portSection, separator(),
+            formSection, separator(),
             navSection,
-        }) | borderRounded | size(WIDTH, EQUAL, kWidth);
+        }) | borderRounded | size(WIDTH, EQUAL, tui::kWidth);
     });
 
-    // pemicu refresh ~10x per detik
+    // ===== Pemicu refresh ~10x per detik =====
     std::atomic<bool> running{true};
     std::thread ticker([&] {
         while (running) {

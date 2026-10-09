@@ -17,7 +17,6 @@ double ChargingPort::processCharging(double hours) {
     return connectedVehicle->injectEnergy(kw * hours);
 }
 
-bool ChargingPort::isAvailable() const { return connectedVehicle == nullptr; }
 int ChargingPort::getID() const { return portID; }
 const Vehicle* ChargingPort::getVehicle() const { return connectedVehicle; }
 
