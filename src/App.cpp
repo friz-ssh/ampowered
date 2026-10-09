@@ -42,6 +42,13 @@ std::string rupiah(double v) {
     return "Rp " + s;
 }
 
+// fixing charge speed decimal point to 1 digit
+std::string fixed1(double v) {
+    char buf[10];
+    std::snprintf(buf, sizeof(buf), "%.1f", v);
+    return buf;
+}
+
 // margin kiri-kanan 1 spasi di dalam border terluar
 Element pad(Element e) {
     return hbox({text(" "), std::move(e) | flex, text(" ")});
@@ -56,7 +63,7 @@ Element tableRow(Element c1, Element c2, Element c3,
         cell(std::move(c1), 6),
         cell(std::move(c2), 13),
         cell(std::move(c3), 14),
-        cell(std::move(c4), 21),
+        cell(std::move(c4), 23),
         cell(std::move(c5), 5),
         std::move(c6) | flex,
     });
@@ -124,7 +131,7 @@ void StationApp::run() {
 
     // komponen input
     auto plateInput = Input(&plate, "AB 1234 CD");
-    auto pctInput   = Input(&pctStr, "0-100");
+    auto pctInput = Input(&pctStr, "0-100");
     auto typeToggle = Toggle(&typeLabels, &typeIdx);
     auto portToggle = Toggle(&portLabels, &portIdx);
     auto btnStart = Button("Mulai",   startCharging);
@@ -194,8 +201,8 @@ void StationApp::run() {
                     text(v->getPlate()),
                     hbox({gauge(pct / 100.0) | color(batteryColor(pct)) | flex,
                           text(" " + std::to_string(static_cast<int>(pct)) + "%")
-                              | size(WIDTH, EQUAL, 5)}),
-                    text(std::to_string(static_cast<double>(v->calcChargeSpeed()))),
+                              | size(WIDTH, EQUAL, 6)}),
+                    text(fixed1(v->calcChargeSpeed())),
                     text(rupiah(sessions[i]->getCurrentCost()))));
             } else {
                 portRows.push_back(tableRow(
