@@ -1,29 +1,31 @@
 #include "ChargingSession.hpp"
 
 ChargingSession::ChargingSession(User* u, ChargingPort* p)
-                :user(u), port(p), totalEnergy(0), totalCost(0), active(true) {}
+    : user(u), port(p), totalCost(0), active(true) {}
 
 void ChargingSession::simulateTime(double hours) {
     if (!active) return;
     double kwh = port->processCharging(hours);
-    totalEnergy += kwh;
     totalCost += kwh * port->getRatePerKwh();
 
-    // batasin biaya sebesar saldo, kemudian sesi langsung berhenti
+    // biaya tidak boleh melebihi saldo. sesi selesai sendiri saat saldo habis.
     if (totalCost >= user->getBalance()) {
         totalCost = user->getBalance();
         stopSession();
     }
 }
 
-bool ChargingSession::stopSession() {
-    if (!active) return false;
-    if (!user->deductBalance(totalCost)) return false;   // gagal: sesi tetap aktif
-    active = false;
-    port->unplugVehicle();
-    return true;
+// overload dipilih compiler dari tipe argumen: simulateTime(5) memanggil versi int
+void ChargingSession::simulateTime(int minutes) {
+    simulateTime(minutes / 60.0);
 }
 
-double ChargingSession::getTotalEnergy() const { return totalEnergy; }
+void ChargingSession::stopSession() {
+    if (!active) return;
+    user->deductBalance(totalCost);
+    active = false;
+    port->unplugVehicle();
+}
+
 double ChargingSession::getCurrentCost() const { return totalCost; }
 bool ChargingSession::isActive() const { return active; }
