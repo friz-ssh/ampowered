@@ -131,7 +131,16 @@ void StationApp::run() {
 
     // komponen input
     auto plateInput = Input(&plate, "AB 1234 CD");
-    auto pctInput = Input(&pctStr, "0-100");
+    auto pctInput   = Input(&pctStr, "0-100") | CatchEvent([&](Event e) {
+    if (e.is_character()) {
+        const std::string& ch = e.character();
+        bool isDigit = ch.size() == 1 && ch[0] >= '0' && ch[0] <= '9';
+        bool isDot = ch == "." && pctStr.find('.') == std::string::npos;
+        if (!isDigit && !isDot) return true;
+        if (pctStr.size() >= 6) return true;  // maksimal 6 digit
+    }
+    return false;  // tombol lain (panah, backspace, tab, dll) lanjut seperti biasa
+    });
     auto typeToggle = Toggle(&typeLabels, &typeIdx);
     auto portToggle = Toggle(&portLabels, &portIdx);
     auto btnStart = Button("Mulai",   startCharging);
