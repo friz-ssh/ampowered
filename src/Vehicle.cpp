@@ -31,6 +31,10 @@ double Car::calcChargeSpeed() const {
     return 50.0;
 }
 
+std::string Car::getType() const {
+    return "Car";
+}
+
 // Motorcycle
 Motorcycle::Motorcycle(std::string plate, double percent)
     : Vehicle(plate, 4.0, percent) {}
@@ -38,6 +42,10 @@ Motorcycle::Motorcycle(std::string plate, double percent)
 double Motorcycle::calcChargeSpeed() const {
     if (getBatteryPercentage() > 90.0) { return 0.5; }
     return 3.0;
+}
+
+std::string Motorcycle::getType() const {
+    return "Motorcycle";
 }
 
 // pembuat objek

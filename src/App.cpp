@@ -149,8 +149,8 @@ void StationApp::run() {
         // --- tabel port ---
         Elements portRows;
         portRows.push_back(tui::tableRow(
-            text("Port") | bold, text("Tipe") | bold, text("Kendaraan") | bold,
-            text("Baterai") | bold, text("kW") | bold, text("Biaya") | bold));
+            text("Port") | bold, text("Tipe Port") | bold, text("Tipe Kendaraan") | bold,
+            text("Kendaraan") | bold, text("Baterai") | bold, text("kW") | bold, text("Biaya") | bold));
         portRows.push_back(separatorLight());
 
         for (size_t i = 0; i < ports.size(); ++i) {
@@ -160,6 +160,7 @@ void StationApp::run() {
                 portRows.push_back(tui::tableRow(
                     text(std::to_string(ports[i]->getID())),
                     text(ports[i]->getTypeName()),
+                    text(v->getType()),
                     text(v->getPlate()),
                     hbox({gauge(pct / 100.0) | color(tui::batteryColor(pct)) | flex,
                           text(" " + std::to_string(static_cast<int>(pct)) + "%")
@@ -170,6 +171,7 @@ void StationApp::run() {
                 portRows.push_back(tui::tableRow(
                     text(std::to_string(ports[i]->getID())),
                     text(ports[i]->getTypeName()),
+                    text("-"),
                     tui::cellBadge("KOSONG", Color::GrayLight),
                     text("-"), text("-"), text("-")));
             }

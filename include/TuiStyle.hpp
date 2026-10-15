@@ -7,7 +7,7 @@
 
 namespace tui {
 
-constexpr int kWidth = 76;   // lebar border terluar
+constexpr int kWidth = 91;   // lebar border terluar
 
 // teks dengan blok warna
 ftxui::Element badge(const std::string& s, ftxui::Color bg);
@@ -33,7 +33,8 @@ ftxui::Component lineInput(std::string* value, const std::string& placeholder,
 ftxui::ComponentDecorator numericFilter(std::string* value, size_t maxLen, bool allowDot);
 
 ftxui::Element tableRow(ftxui::Element c1, ftxui::Element c2, ftxui::Element c3,
-                        ftxui::Element c4, ftxui::Element c5, ftxui::Element c6);
+                        ftxui::Element c4, ftxui::Element c5, ftxui::Element c6,
+                        ftxui::Element c7);
 
 ftxui::Component toggle(const std::vector<std::string>* entries, int* selected);
 

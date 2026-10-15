@@ -13,6 +13,7 @@ public:
     virtual ~Vehicle() = default;
 
     virtual double calcChargeSpeed() const = 0;
+    virtual std::string getType() const = 0;
 
     double injectEnergy(double kwh);
     double getBatteryPercentage() const;
@@ -23,12 +24,14 @@ class Car : public Vehicle {
 public:
     Car(std::string plate, double percent);
     double calcChargeSpeed() const override;
+    std::string getType() const override;
 };
 
 class Motorcycle : public Vehicle {
 public:
     Motorcycle(std::string plate, double percent);
     double calcChargeSpeed() const override;
+    std::string getType() const override;
 };
 
 // memilih tipe konkret berdasarkan input

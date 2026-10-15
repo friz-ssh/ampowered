@@ -65,14 +65,15 @@ Element cell(Element e, int w) {
 }  // namespace
 
 Element tableRow(Element c1, Element c2, Element c3,
-                 Element c4, Element c5, Element c6) {
+                 Element c4, Element c5, Element c6, Element c7) {
     return hbox({
         cell(std::move(c1), 6),    // Port
-        cell(std::move(c2), 13),   // Tipe
-        cell(std::move(c3), 15),   // Kendaraan
-        cell(std::move(c4), 20),   // Baterai
-        cell(std::move(c5), 6),    // kW
-        std::move(c6) | flex,      // Biaya
+        cell(std::move(c2), 13),   // Tipe Port
+        cell(std::move(c3), 15),   // Tipe Kendaraan
+        cell(std::move(c4), 15),   // Kendaraan
+        cell(std::move(c5), 20),   // Baterai
+        cell(std::move(c6), 6),    // kW
+        std::move(c7) | flex,      // Biaya
     });
 }
 
