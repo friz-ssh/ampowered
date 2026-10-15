@@ -2,16 +2,17 @@
 #include "Vehicle.hpp"
 #include <string>
 
+// abstract class
 class ChargingPort {
 private:
     int portID;
     Vehicle* connectedVehicle;
-    
+
 public:
-    explicit ChargingPort(int id); // explicit supaya compiler tidak langsung konversi otomatis
+    explicit ChargingPort(int id);
     virtual ~ChargingPort() = default;
 
-    // virtual function yang bisa di override sama child class nya
+    // pure virtual function yang bisa di override sama child class nya
     virtual double getRatePerKwh() const = 0;
     virtual std::string getTypeName() const = 0;
 
@@ -19,11 +20,11 @@ public:
     void unplugVehicle();
     double processCharging(double hours); // kWh yang benar benar masuk
 
-    bool isAvailable() const;
     int getID() const;
     const Vehicle* getVehicle() const;
 };
 
+// inheritance
 class DCFastPort : public ChargingPort {
 public:
     explicit DCFastPort(int id);
